@@ -33,6 +33,12 @@ export class ParallelStacksPanel {
         ParallelStacksPanel.currentPanel = new ParallelStacksPanel(panel, extensionUri);
     }
 
+    public static updateIfShown() {
+        if (ParallelStacksPanel.currentPanel) {
+            ParallelStacksPanel.currentPanel._updateGraph([]);
+        }
+    }
+
     private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
         this._panel = panel;
         this._extensionUri = extensionUri;
@@ -85,8 +91,12 @@ export class ParallelStacksPanel {
             this._panel.webview.postMessage({ command: 'error', text: 'No active debug session' });
             return;
         }
+        
+        const cfg = vscode.workspace.getConfiguration("parallel-stacks");
+        const topDown = cfg.get("topdown") as boolean;
+
         try {
-            const graphData = await getStackGraph(session, splitNodes);
+            const graphData = await getStackGraph(session, splitNodes, topDown);
 
             // Get currently focused thread
             const activeStackItem = vscode.debug.activeStackItem;
@@ -100,6 +110,7 @@ export class ParallelStacksPanel {
             this._panel.webview.postMessage({
                 command: 'updateGraph',
                 data: graphData,
+                topDown: topDown,
                 currentThreadId: currentThreadId
             });
         } catch (e: any) {
@@ -112,9 +123,19 @@ export class ParallelStacksPanel {
             return;
         }
         try {
-            const uri = vscode.Uri.file(source.path);
+            const uri = 
+                source.path.startsWith("vscode-remote://") ?
+                vscode.Uri.parse(source.path) :
+                vscode.Uri.file(source.path);
+
+            const cfg = vscode.workspace.getConfiguration("parallel-stacks");
+            const viewColumnIdx = cfg.get("open-column") as number;
+            const viewColumn = viewColumnIdx > 0 ?
+                vscode.ViewColumn.One + (viewColumnIdx - 1) :
+                vscode.ViewColumn.Active;
+
             const doc = await vscode.workspace.openTextDocument(uri);
-            const editor = await vscode.window.showTextDocument(doc);
+            const editor = await vscode.window.showTextDocument(doc, viewColumn);
             const pos = new vscode.Position(line - 1, column - 1);
 
             // Clear decorations from all visible editors to ensure only one highlight
@@ -280,7 +301,7 @@ export class ParallelStacksPanel {
 
             // Handle window resize
             window.addEventListener('resize', () => {
-                 if (lastData) renderGraph(lastData);
+                 if (lastData) renderGraph(lastData, lastTopDown);
             });
 
             window.addEventListener('message', event => {
@@ -291,8 +312,9 @@ export class ParallelStacksPanel {
                     case 'updateGraph':
                         errorDiv.textContent = '';
                         lastData = message.data;
+                        lastTopDown = message.topDown;
                         currentThreadId = message.currentThreadId;
-                        renderGraph(message.data);
+                        renderGraph(message.data, message.topDown);
                         break;
                     case 'error':
                         errorDiv.textContent = message.text;
@@ -301,8 +323,9 @@ export class ParallelStacksPanel {
             });
 
             let lastData = null;
+            let lastTopDown = null;
 
-            function renderGraph(data) {
+            function renderGraph(data, topDown) {
                 const container = document.getElementById('graph');
 
                 // Fix rendering lag on tab switch (0 size)
@@ -319,6 +342,8 @@ export class ParallelStacksPanel {
                     container.innerHTML = '<div style="padding: 20px;">No stack data available. Start a debug session.</div>';
                     return;
                 }
+
+                const flipTopDown = v => topDown ? -v : v;
 
                 // Prepare data for D3
                 const rootData = {
@@ -369,7 +394,7 @@ export class ParallelStacksPanel {
                         // Check if the PARENT was a branch point
                         const isBranch = d.parent.children.length > 1;
                         const step = isBranch ? 140 : 70;
-                        d.y = d.parent.y + step;
+                        d.y = d.parent.y + flipTopDown(step);
                     }
                 });
 
@@ -567,11 +592,11 @@ export class ParallelStacksPanel {
                     const labelGroup = leaf.append('g')
                         .attr('class', 'node-thread-label-group')
                         .style('pointer-events', 'none')
-                        .attr('transform', 'translate(0, ' + (-nodeHeight / 2 - 10) + ')');
+                        .attr('transform', 'translate(0, ' + flipTopDown(-nodeHeight / 2 - 10) + ')');
 
                     // Render each thread label stacked vertically
                     threads.forEach((txt, i) => {
-                        const yOffset = -i * 15;
+                        const yOffset = flipTopDown(-i * 15);
                         const text = labelGroup.append('text')
                             .attr('class', 'node-thread-label-text')
                             .classed('current-thread', d.data.threadIds[i] === currentThreadId)
@@ -650,13 +675,16 @@ export class ParallelStacksPanel {
                 tooltip.style("opacity", 1)
                        .style("left", x + "px")
                        .style("top", y + "px")
+                       .style("display", "block")
                        .html(html);
             }
 
             function hideTooltipWithDelay() {
                 if (hideTimeout) clearTimeout(hideTimeout);
                 hideTimeout = setTimeout(() => {
-                    d3.select("#tooltip").style("opacity", 0);
+                    d3.select("#tooltip")
+                        .style("opacity", 0)
+                        .style("display", "none");
                 }, 500);
             }
 

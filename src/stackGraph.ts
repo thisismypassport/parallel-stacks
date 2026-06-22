@@ -27,7 +27,7 @@ export interface ThreadData {
     frames: any[];
 }
 
-export async function getStackGraph(session: vscode.DebugSession, splitNodes: string[] = []): Promise<GraphNode[]> {
+export async function getStackGraph(session: vscode.DebugSession, splitNodes: string[] = [], topDown?: boolean): Promise<GraphNode[]> {
     outputChannel.appendLine(`getStackGraph called for session: ${session.name} (${session.type})`);
 
     // Check if session type is supported (optional, but good for debugging)
@@ -63,10 +63,14 @@ export async function getStackGraph(session: vscode.DebugSession, splitNodes: st
                 }
 
                 // Reverse to process from root (bottom of stack) to top (leaf)
+                if (!topDown) {
+                    stackTraceResponse.stackFrames.reverse();
+                }
+
                 return {
                     id: thread.id,
                     name: thread.name,
-                    frames: stackTraceResponse.stackFrames.reverse()
+                    frames: stackTraceResponse.stackFrames
                 };
             } catch (e: any) {
                 outputChannel.appendLine(`Failed to get stack trace for thread ${thread.id}: ${e.message}`);

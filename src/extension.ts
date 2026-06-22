@@ -19,6 +19,12 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	context.subscriptions.push(disposable);
+	
+	vscode.workspace.onDidChangeConfiguration(e => {
+		if (e.affectsConfiguration("parallel-stacks")) {
+			ParallelStacksPanel.updateIfShown();
+		}
+	});
 }
 
 // This method is called when your extension is deactivated

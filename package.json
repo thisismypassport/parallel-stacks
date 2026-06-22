@@ -39,7 +39,24 @@
         "command": "parallel-stacks.show",
         "title": "Show Parallel Stacks"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Parallel Stacks View",
+      "properties": {
+        "parallel-stacks.topdown": {
+          "type": "boolean",
+          "default": false,
+          "title": "Top-Down",
+          "description": "Show the stacks from the top down instead of from the bottom up"
+        },
+        "parallel-stacks.open-column": {
+          "type": "integer",
+          "default": 0,
+          "title": "Open in Editor Column",
+          "description": "Open files in the editor column at the specified index (from the left) - or, if 0 (default), in the same column as the parallel stacks view"
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
